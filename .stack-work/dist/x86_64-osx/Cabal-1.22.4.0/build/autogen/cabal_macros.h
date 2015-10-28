@@ -7,12 +7,19 @@
   (major1) == 4 && (major2) <  8 || \
   (major1) == 4 && (major2) == 8 && (minor) <= 1)
 
-/* package dequeue-0.1.12 */
-#define VERSION_dequeue "0.1.12"
-#define MIN_VERSION_dequeue(major1,major2,minor) (\
+/* package containers-0.5.6.2 */
+#define VERSION_containers "0.5.6.2"
+#define MIN_VERSION_containers(major1,major2,minor) (\
   (major1) <  0 || \
-  (major1) == 0 && (major2) <  1 || \
-  (major1) == 0 && (major2) == 1 && (minor) <= 12)
+  (major1) == 0 && (major2) <  5 || \
+  (major1) == 0 && (major2) == 5 && (minor) <= 6)
+
+/* package pqueue-1.3.1 */
+#define VERSION_pqueue "1.3.1"
+#define MIN_VERSION_pqueue(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  3 || \
+  (major1) == 1 && (major2) == 3 && (minor) <= 1)
 
 /* tool cpphs-1.19.3 */
 #define TOOL_VERSION_cpphs "1.19.3"
@@ -84,5 +91,5 @@
   (major1) == 0 && (major2) <  28 || \
   (major1) == 0 && (major2) == 28 && (minor) <= 0)
 
-#define CURRENT_PACKAGE_KEY "aiast_LqL6P5qXzHk3UpCjwh982P"
+#define CURRENT_PACKAGE_KEY "aiast_9KQGwubUFpm1CruK3v3qIU"
 

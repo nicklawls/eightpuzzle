@@ -17,7 +17,7 @@ version = Version [0,1,0,0] []
 bindir, libdir, datadir, libexecdir, sysconfdir :: FilePath
 
 bindir     = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/bin"
-libdir     = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/lib/x86_64-osx-ghc-7.10.2/ai-astar-0.1.0.0-LqL6P5qXzHk3UpCjwh982P"
+libdir     = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/lib/x86_64-osx-ghc-7.10.2/ai-astar-0.1.0.0-9KQGwubUFpm1CruK3v3qIU"
 datadir    = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/share/x86_64-osx-ghc-7.10.2/ai-astar-0.1.0.0"
 libexecdir = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/libexec"
 sysconfdir = "/Users/nicklawler222/Code/ai-astar/.stack-work/install/x86_64-osx/lts-3.9/7.10.2/etc"
