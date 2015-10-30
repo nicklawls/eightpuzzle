@@ -2,9 +2,9 @@ module Main where
 
 import System.Environment
 import Control.Monad
-import Data.List (sortBy)
+import Data.List (sortBy, foldl')
 import Data.Ord (comparing)
-import Data.PQueue.Min
+import Data.PQueue.Prio.Min (MinPQueue, singleton, minView, insert)
 
 {- We'll start by defining a few abstract building blocks for pieces of the general
    search algorithm. Allowing us to generalize to any NPuzzle, or any other
@@ -26,6 +26,8 @@ type State a = a
    i.e. from a current state to a set of new states
 -}
 
+-- TODO Tuple up the Cost = Int with the operator function
+-- Make sure all operators return the empty list when they're undefined
 type Operator a =  State a -> [State a]
 
 {- this is a typeclass declaration, basically saying that a type 'a' represets
@@ -39,7 +41,7 @@ type Operator a =  State a -> [State a]
    syntax allows us to a provide a default implementation in the declaration.
 -}
 
-class Ord a => Problem a where
+class Problem a where
     expand :: State a -> [State a]
     isGoal :: State a -> Bool
     operators :: [Operator a]
@@ -63,8 +65,8 @@ applyAll functions state =
     min priority queue.
 -}
 
-type Queue a = MinQueue a
-type QueueingFunction a = Queue (State a) -> [State a] -> Queue (State a)
+type Queue k a = MinPQueue k a
+type QueueingFunction k a = Queue k (State a) -> [State a] -> Queue k (State a)
 
 {- We can finally write the general search algorithm, which takes any 'State a'
    implementing the 'Problem' interface, plus a queueing function with which to
@@ -74,17 +76,22 @@ type QueueingFunction a = Queue (State a) -> [State a] -> Queue (State a)
    function to order node insertion
    We return an 'Either' a 'String' to denote that the operation might fail,
    producing an error 'String', or the correct solution state
+
+   Haskell code doesn't have an immediately obvious way to express while loops,
+   so we use the recursive 'go' function to implement iteration. The 'go'
+   function also uses the 'do' syntax sugar to look more imperative
 -}
 
-generalSearch :: Problem a => State a -> QueueingFunction a -> Either String (State a)
-generalSearch state = go (singleton state)
-    where go nodes qf = do
-            (node, queue) <- case minView nodes of
-                                Nothing -> Left "No Solution"
-                                Just (node,queue) -> Right (node,queue)
-            if isGoal node
-              then return node
-              else go (qf queue (expand node) ) qf
+generalSearch :: (Problem a, Ord k) => k -> State a -> QueueingFunction k a -> Either String (State a)
+generalSearch score state =
+    go (singleton score state)
+        where go nodes qf = do
+                (node, queue) <- case minView nodes of
+                                    Nothing -> Left "No Solution"
+                                    Just (node,queue) -> Right (node,queue)
+                if isGoal node
+                  then return node
+                  else go (qf queue (expand node) ) qf
 
 
 
@@ -96,17 +103,25 @@ generalSearch state = go (singleton state)
    matter what the problem is.
 -}
 
+-- TODO fix when cost is tupled
+astar :: Problem a => (State a -> Int) -- g(x)
+                   -> (State a -> Int) -- h(x)
+                   -> Queue Int (State a) -- Initial queue
+                   -> [State a] -- expanded nodes
+                   -> Queue Int (State a) -- New Queue
+astar g h queue nodes =
+    let f x = g x + h x
+    in  insertAll queue (map (\node -> (f node, node)) nodes)
 
--- the second argument is the complete function h(x)
--- we return a complete queueing function cooresponding to the a* algorithm
-astar :: Problem a => (State a -> Int) -> Queue (State a) -> [State a] -> Queue (State a)
-astar h queue nodes = undefined
+
+insertAll :: (Ord k, Problem a) => Queue k (State a) -> [(k,State a)] -> Queue k (State a)
+insertAll = foldl' (flip (uncurry insert))
+-- this magical incantation inserts the list of (score, node) pairs into the queue
 
 
-
-
-uniformCost :: Problem a => QueueingFunction a
-uniformCost = astar  (const 0) -- 'const 0' is a function that always returns 0
+-- TODO Fix this when cost is tupled
+uniformCost :: Problem a => QueueingFunction Int a
+uniformCost = astar (const 1) (const 0) -- 'const 0' is a function that always returns 0
 
 {- Now that we have a general framework set up, lets define the Eight Puzzle
    problem by defining its state and its operators.
@@ -122,18 +137,19 @@ uniformCost = astar  (const 0) -- 'const 0' is a function that always returns 0
    by the following Haskell algebraic datatype.
 -}
 
-data Cell
-    = Blank
-    | One
-    | Two
-    | Three
-    | Four
-    | Five
-    | Six
-    | Seven
-    | Eight
+-- data Cell
+--     = Blank
+--     | One
+--     | Two
+--     | Three
+--     | Four
+--     | Five
+--     | Six
+--     | Seven
+--     | Eight
 
-{- The puzzle itself is simply a mapping
+{-  Data structure: start with the operators to design it
+
 -}
 
 -- TODO EightPuzzle
@@ -145,7 +161,7 @@ data Cell
 -- astarMisplacedTile :: QueueingFunction EightPuzzle
 -- astarMisplacedTile = undefined
 --
--- astarManhattan :: Problem a => QueueingFunction EightPuzzle
+-- astarManhattan :: QueueingFunction EightPuzzle
 -- astarManhattan = undefined
 
 
