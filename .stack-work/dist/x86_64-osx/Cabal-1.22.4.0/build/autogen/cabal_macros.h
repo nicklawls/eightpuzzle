@@ -14,12 +14,26 @@
   (major1) == 0 && (major2) <  5 || \
   (major1) == 0 && (major2) == 5 && (minor) <= 6)
 
+/* package matrix-0.3.4.4 */
+#define VERSION_matrix "0.3.4.4"
+#define MIN_VERSION_matrix(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  3 || \
+  (major1) == 0 && (major2) == 3 && (minor) <= 4)
+
 /* package pqueue-1.3.1 */
 #define VERSION_pqueue "1.3.1"
 #define MIN_VERSION_pqueue(major1,major2,minor) (\
   (major1) <  1 || \
   (major1) == 1 && (major2) <  3 || \
   (major1) == 1 && (major2) == 3 && (minor) <= 1)
+
+/* package vector-0.10.12.3 */
+#define VERSION_vector "0.10.12.3"
+#define MIN_VERSION_vector(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  10 || \
+  (major1) == 0 && (major2) == 10 && (minor) <= 12)
 
 /* tool cpphs-1.19.3 */
 #define TOOL_VERSION_cpphs "1.19.3"
@@ -84,12 +98,5 @@
   (major1) == 1 && (major2) <  22 || \
   (major1) == 1 && (major2) == 22 && (minor) <= 0)
 
-/* tool pkg-config-0.28 */
-#define TOOL_VERSION_pkg_config "0.28"
-#define MIN_TOOL_VERSION_pkg_config(major1,major2,minor) (\
-  (major1) <  0 || \
-  (major1) == 0 && (major2) <  28 || \
-  (major1) == 0 && (major2) == 28 && (minor) <= 0)
-
-#define CURRENT_PACKAGE_KEY "aiast_9KQGwubUFpm1CruK3v3qIU"
+#define CURRENT_PACKAGE_KEY "aiast_C5i5MtKamnd8pKZnJE9IB5"
 

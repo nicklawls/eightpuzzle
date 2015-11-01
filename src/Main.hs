@@ -1,10 +1,13 @@
 module Main where
 
 import System.Environment
+import Data.Maybe (catMaybes)
 import Control.Monad
 import Data.List (sortBy, foldl')
 import Data.Ord (comparing)
 import Data.PQueue.Prio.Min (MinPQueue, singleton, minView, insert)
+import Data.Vector (Vector, (!), (//), elemIndex, findIndex, toList, indexed, fromList)
+import qualified Data.Matrix as M (fromList)
 
 {-  We'll start by defining a few abstract building blocks for pieces of the general
     search algorithm. Allowing us to generalize to any NPuzzle, or any other
@@ -21,17 +24,17 @@ import Data.PQueue.Prio.Min (MinPQueue, singleton, minView, insert)
 
 
 {-  An Operator for type 'state' is simply a function from a 'state' to a list of 'states's
-    i.e. from a current state to a set of child states. Each operator also has
-    an associated cost which we can represent as simply an integer
+    i.e. from a current state to a child state. For simplicity, we trust that
+    operators will apply their costs to the 'state'
 -}
 
 
 type Cost = Int -- 'Cost' is now an alias for the primitive type 'Int'
 
-type Operator state = ( Cost, state -> [state] )
+type Operator state = state -> Maybe state
 -- 'state' is a type variable that any type can inhabit
 -- 'a -> b' defines a function from a to b
--- (a,b) is a tuple with inhabitants of possibly different type
+
 
 {- Below is a typeclass declaration, basically saying that a type 'a' represets
    a 'Problem' if it has a set of 'Operators', and if the two functions
@@ -49,15 +52,17 @@ class Problem state where
     operators :: [Operator state]
     expand :: state -> [state]
     expand state =
-        concat (applyAll (map snd operators) state)
-        -- reads: "concatinate the results of applying all operators to the state "
+        catMaybes (applyAll operators state)
+        -- reads apply all operators to the state, leaving out
+        -- the operators that didn't apply
 
--- apply each function in a list of functions to some value, returning a list of results
+
 applyAll :: [a -> b] -> a -> [b]
 applyAll functions state =
     case functions of
         [] -> []
         (firstFunction:rest) -> firstFunction state : applyAll rest state
+-- apply each function in a list of functions to some value, returning a list of results
 -- 'state' here is a value-level function argument, not a type variable
 
 
@@ -89,7 +94,7 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
 
 generalSearch :: Problem state => state -> QueueingFunction state -> Either String state
 generalSearch state =
-    go (singleton 0 state) -- start with initial cost 0
+    go (singleton 0 state) -- start with initial cost 0, singleton initializes queue
         where go nodes qf = do
                 (node, queue) <- case minView nodes of
                                     Nothing -> Left "No Solution"
@@ -138,36 +143,117 @@ uniformCost = astar (const 1) (const 0) -- 'const 0' is a function that always r
    these operators to do their work efficiently
 -}
 
-{- Each Cell of the puzzle can be in one of nine possible states, represented
-   by the following Haskell algebraic datatype.
+
+{-  To represent the eight puzzle, we use a record that contains both the depth
+    of the solution and vector where v(i) current position of tile i. This allows
+    us to quickly (O(1)) locate the position of the blank tile at any time,
+    an operation we have to perfrom on every iteration. We must then pay O(n) time,
+    where n is the size of the puzzle, to search for the blank's neighbor and
+    perform the swap, but this operation is not needed if the operator doesn't
+    apply to the tile.
 -}
 
--- data Cell
---     = Blank
---     | One
---     | Two
---     | Three
---     | Four
---     | Five
---     | Six
---     | Seven
---     | Eight
+type Position = Int
 
-{-  Data structure: start with the operators to design it
+-- TODO might have to implement Eq without depth
+data EightPuzzle = EightPuzzle
+    { depth :: Cost
+    , board :: Vector Position
+    } deriving (Eq)
 
+
+-- allows us to keep the inverted representation while
+-- pretty printing the actual board structure
+instance Show EightPuzzle where
+    show puzzle =
+        ( show
+        . M.fromList 3 3
+        . map fst
+        . sortBy (comparing snd)
+        . toList
+        . indexed
+        . board
+        $ puzzle
+        ) ++ "Depth: " ++ show (depth puzzle)
+
+
+swap :: Vector a -> Int -> Int -> Vector a
+swap vec index1 index2 =
+    vec //
+        [ (index1, vec ! index2)
+        , (index2, vec ! index1)
+        ]
+
+
+{-  a general function for moving the blank in some direction
 -}
 
--- TODO EightPuzzle
+
+moveBlank :: (Position -> Position) -- function to find the neightbor
+          -> (Position -> Bool) -- predicate for moveability in direction x
+          -> EightPuzzle
+          -> Maybe EightPuzzle
+moveBlank calcNeighbor boundaryTest (EightPuzzle depth board) =
+    let blank = board ! 0  -- the position of the blank, slot 0 by convention
+        Just neighbor = elemIndex (calcNeighbor blank) board
+    in
+        if boundaryTest blank
+          then Just
+                EightPuzzle
+                    { depth = depth + 1
+                    , board = swap board 0 neighbor
+                    }
+          else Nothing
+-- the above pattern match will throw an exception if elemIndex returns 'Nothing'
+
+
+moveBlankLeft :: Operator EightPuzzle
+moveBlankLeft = moveBlank (\x -> x - 1) $ (> 0) . (`mod` 3)
+
+
+moveBlankRight :: Operator EightPuzzle
+moveBlankRight = moveBlank (+ 1) $ (< 2) . (`mod` 3)
+
+
+moveBlankDown :: Operator EightPuzzle
+moveBlankDown = moveBlank (+ 3) (< 6)
+
+
+moveBlankUp :: Operator EightPuzzle
+moveBlankUp = moveBlank (\x -> x - 3) (> 2)
+
+instance Problem EightPuzzle where
+    isGoal    = (== fromList (8:[0..7]) ) . board
+    operators =
+        [ moveBlankUp
+        , moveBlankDown
+        , moveBlankLeft
+        , moveBlankRight
+        ]
+
+
+puzzle :: EightPuzzle
+puzzle = EightPuzzle 0 (fromList [4,2,3,1,6,7,8,5,0])
+
 
 {-
 -}
 
 
--- astarMisplacedTile :: QueueingFunction EightPuzzle
--- astarMisplacedTile = undefined
---
--- astarManhattan :: QueueingFunction EightPuzzle
--- astarManhattan = undefined
+misplacedTile :: EightPuzzle -> Cost
+misplacedTile ep = undefined
+
+
+manhattan :: EightPuzzle -> Cost
+manhattan ep = undefined
+
+
+astarMisplacedTile :: QueueingFunction EightPuzzle
+astarMisplacedTile = astar depth misplacedTile
+
+
+astarManhattan :: QueueingFunction EightPuzzle
+astarManhattan = astar depth manhattan
 
 
 
