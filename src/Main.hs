@@ -1,15 +1,16 @@
 module Main where
 
-import           Data.Maybe           (catMaybes)
-import           System.Environment
 import           Data.List            (foldl', sortBy)
 import qualified Data.Matrix          as M (fromList)
+import           Data.Maybe           (catMaybes)
 import           Data.Ord             (comparing)
-import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton,size)
+import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton,
+                                       size)
 import           Data.Vector          (Vector, (!), (//))
 import qualified Data.Vector          as V (elemIndex, filter, findIndex,
                                             fromList, indexed, length, map,
                                             slice, toList, zipWith)
+import           System.IO            (hFlush, stdout)
 
 {-  We'll start by defining a few abstract building blocks for pieces of the general
     search algorithm. Allowing us to generalize to any NPuzzle, or any other
@@ -96,26 +97,31 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
 -}
 
 -- Possibly replace trace string with IO embedding
-generalSearch :: (Show state, Problem state) => state -> QueueingFunction state -> Either String (state,Int,Int,String)
+generalSearch :: (Show state, Problem state) => state
+                                             -> QueueingFunction state
+                                             -> Either String (state, Int, Int, String)
 generalSearch initialState =
-    go (singleton 0 initialState) 0 0 "Beginning Search \n" -- start with initial cost 0, 'singleton' initializes queue
+    go (singleton 0 initialState) 0 1 "Beginning Search \n" -- start with initial cost 0, 'singleton' initializes queue
         where go nodes nodeCount maxSize trace enqueue = do
-                (node, queue) <- case minView nodes of -- haskelly way of checking if the queue is empty
-                                    Nothing -> Left "No Solution"
+                (node, queue) <- case minView nodes of
+                                    Nothing   -> Left "No Solution"
                                     Just view -> Right view
                 if isGoal node
                   then return (node, nodeCount, maxSize, trace ++ show node)
                   else go (enqueue queue (expand node))
                           (nodeCount + length (expand node))
-                          (max maxSize (size queue))
-                          (trace ++ show node)
+                          (max maxSize (size nodes))
+                          (trace ++ show node ++ "\n")
                           enqueue
+-- Using "Maybe a = Just a | Nothing" is the haskelly way of checking for null
+-- in this case, we minView to return either 'Just' the dequeued node and the new
+-- queue, or 'Nothing', telling us that the queue was empty
 
 
 
 
 {- Since every one of our search procedures is a derivative of A*, we can define a
-   general version first, then pass g and h functions as arguments.
+   general version first, then pass the g and h functions as arguments.
 
    We can also implement Uniform Cost search here, since it uses h(n) = 0 no
    matter what the problem is.
@@ -286,7 +292,7 @@ manhattan16 = makePuzzle [8,4,3,5,1,7,6,2,0]
    plugging in the appropriate heuristics and depth functions
 
    Pardon the rather terse Haskell being displayed here ... it might help to
-   read the function from right to left, and to think of each (.) as applying
+   read the definition from right to left, and to think of each (.) as applying
    the next function on its left to the result so far.
 -}
 
@@ -300,7 +306,7 @@ misplacedTile =
 -- apply toXy to the argument and the goal, calculate individual coordinate distances (excluding the blank), sum them up
 manhattan :: EightPuzzle -> Cost
 manhattan =
-    sum . V.slice 1 8 . V.zipWith coordDistance (V.map toXy goalBoard) . V.map toXy . board
+    sum . V.slice 1 8 . V.zipWith distance (V.map toXy goalBoard) . V.map toXy . board
 
 
 -- convert position into an (x,y) coordinate pair
@@ -309,8 +315,8 @@ toXy pos = (pos `div` 3, pos `mod` 3)
 
 
 -- sum the differences along the x and y axes
-coordDistance :: (Int, Int) -> (Int,Int) -> Cost
-coordDistance (xs,ys) (xg,yg) =
+distance :: (Int, Int) -> (Int,Int) -> Cost
+distance (xs,ys) (xg,yg) =
     abs (xs - xg) + abs (ys - yg)
 
 
@@ -329,5 +335,45 @@ uniformCostEightPuzzle = uniformCost depth
 
 main :: IO ()
 main = do
-  args <- getEnv "foo"
-  putStrLn "hello world"
+  putStrLn "Nick Lawler's Amazing 8 Puzzle!!"
+  putStrLn "Hit 1 to run the benchmark or 2 to enter an arbitrary puzzle"
+  choice <- getLine
+  case choice of
+      "1" -> benchmark
+      "2" -> arbitraryPuzzle
+      _   -> putStrLn "Listen to Instructions! \n" >>= const main
+
+
+benchmark :: IO ()
+benchmark = undefined
+
+
+arbitraryPuzzle :: IO ()
+arbitraryPuzzle = do
+    putStrLn "Enter rows using ' ' as a separator, use '0' to represent the blank"
+    putStr "Enter the first row:  "
+    hFlush stdout
+    first <- getLine
+    putStr "Enter the second row: "
+    hFlush stdout
+    second <- getLine
+    putStr "Enter the thrid row:  "
+    hFlush stdout
+    third <- getLine
+    putStrLn "Enter 1 for Uniform Cost Search"
+    putStrLn "Enter 2 for A* Misplaced Tile"
+    putStrLn "Enter 3 for A* Manhattan Distance"
+    choice <- getLine
+    let algorithm = case choice of
+                        "1" -> uniformCostEightPuzzle
+                        "2" -> astarMisplacedTile
+                        "3" -> astarManhattan
+                        _   -> seq 0 (error "You failed to select an algoritm, I gleefully crash your program")
+        puzzle = makePuzzle (map read $ concatMap words [first,second,third])
+    case generalSearch puzzle algorithm of
+        Left err -> putStrLn err
+        Right (state, numNodes, maxSize, trace) -> do
+            putStrLn trace
+            putStrLn $ "Solution found at depth " ++ show (depth state)
+            putStrLn $ "Nodes Expanded:      " ++ show numNodes
+            putStrLn $ "Maximum Queue Size:  " ++ show maxSize
