@@ -6,7 +6,8 @@ import Control.Monad
 import Data.List (sortBy, foldl')
 import Data.Ord (comparing)
 import Data.PQueue.Prio.Min (MinPQueue, singleton, minView, insert)
-import Data.Vector (Vector, (!), (//), elemIndex, findIndex, toList, indexed, fromList)
+import Data.Vector (Vector, (!), (//))
+import qualified Data.Vector as V (elemIndex, findIndex, toList, indexed, fromList, length, zipWith, filter)
 import qualified Data.Matrix as M (fromList)
 
 {-  We'll start by defining a few abstract building blocks for pieces of the general
@@ -114,12 +115,12 @@ generalSearch state =
 -}
 
 -- TODO fix when cost is tupled
-astar :: Problem state => (state -> Cost) -- the function g(x)
-                       -> (state -> Cost) -- the function h(x)
+astar :: Problem state => (state -> Cost) -- the function h(x)
+                       -> (state -> Cost) -- the function g(x)
                        -> Queue state     -- initial queue
                        -> [state]         -- expanded nodes
                        -> Queue state     -- new queue
-astar g h queue nodes =
+astar h g queue nodes =
     let f x = g x + h x
     in  insertAll queue (map (\node -> (f node, node)) nodes)
 
@@ -130,8 +131,8 @@ insertAll = foldl' (flip (uncurry insert))
 
 
 -- TODO Fix this when cost is tupled
-uniformCost :: Problem state => QueueingFunction state
-uniformCost = astar (const 1) (const 0) -- 'const 0' is a function that always returns 0
+uniformCost :: Problem state => (state -> Cost) -> QueueingFunction state
+uniformCost = astar (const 0) -- 'const 0' is a function that always returns 0
 
 {- Now that we have a general framework set up, lets define the Eight Puzzle
    problem by defining its state and its operators.
@@ -145,19 +146,19 @@ uniformCost = astar (const 1) (const 0) -- 'const 0' is a function that always r
 
 
 {-  To represent the eight puzzle, we use a record that contains both the depth
-    of the solution and vector where v(i) current position of tile i. This allows
-    us to quickly (O(1)) locate the position of the blank tile at any time,
-    an operation we have to perfrom on every iteration. We must then pay O(n) time,
-    where n is the size of the puzzle, to search for the blank's neighbor and
-    perform the swap, but this operation is not needed if the operator doesn't
-    apply to the tile.
+    of the solution and vector where v(i) current position of tile i. If make it
+    a convention to make v(0) the location of the blank, we can quickly (O(1))
+    locate the position of the blank tile at any time, an operation we have to
+    perfrom on every iteration. We must then pay O(n) time, where n is the size
+    of the puzzle, to search for the blank's neighbor and perform the swap, but
+    this operation is not needed if the operator doesn't apply to the tile.
 -}
 
 type Position = Int
 
--- TODO might have to implement Eq without depth
+
 data EightPuzzle = EightPuzzle
-    { depth :: Cost
+    { depth :: Cost -- gives you 'depth :: EightPuzzle -> Cost' for free, will become g(x)
     , board :: Vector Position
     } deriving (Eq)
 
@@ -170,22 +171,17 @@ instance Show EightPuzzle where
         . M.fromList 3 3
         . map fst
         . sortBy (comparing snd)
-        . toList
-        . indexed
+        . V.toList
+        . V.indexed
         . board
         $ puzzle
         ) ++ "Depth: " ++ show (depth puzzle)
 
 
-swap :: Vector a -> Int -> Int -> Vector a
-swap vec index1 index2 =
-    vec //
-        [ (index1, vec ! index2)
-        , (index2, vec ! index1)
-        ]
-
-
-{-  a general function for moving the blank in some direction
+{-  To implement the Operators for Eightpuzzle, we can begin by defining a
+    general function that will move the blank in any direction, with the direction
+    specified by a function that finds the new position of the blank and a function
+    that checks that the proposed move can occur
 -}
 
 
@@ -194,8 +190,8 @@ moveBlank :: (Position -> Position) -- function to find the neightbor
           -> EightPuzzle
           -> Maybe EightPuzzle
 moveBlank calcNeighbor boundaryTest (EightPuzzle depth board) =
-    let blank = board ! 0  -- the position of the blank, slot 0 by convention
-        Just neighbor = elemIndex (calcNeighbor blank) board
+    let blank = board ! 0
+        Just neighbor = V.elemIndex (calcNeighbor blank) board
     in
         if boundaryTest blank
           then Just
@@ -204,8 +200,23 @@ moveBlank calcNeighbor boundaryTest (EightPuzzle depth board) =
                     , board = swap board 0 neighbor
                     }
           else Nothing
--- the above pattern match will throw an exception if elemIndex returns 'Nothing'
+-- (!) is unsafe vector indexing
+-- the (Just neighbor) pattern match will throw an exception if elemIndex returns
+-- 'Nothing'
 
+
+-- swap the element at index1 with the element at index2
+swap :: Vector a -> Int -> Int -> Vector a
+swap vec index1 index2 =
+    vec //
+        [ (index1, vec ! index2)
+        , (index2, vec ! index1)
+        ]
+
+
+
+{-  With the general framework in place, we can specialize it for each direction
+-}
 
 moveBlankLeft :: Operator EightPuzzle
 moveBlankLeft = moveBlank (\x -> x - 1) $ (> 0) . (`mod` 3)
@@ -215,15 +226,16 @@ moveBlankRight :: Operator EightPuzzle
 moveBlankRight = moveBlank (+ 1) $ (< 2) . (`mod` 3)
 
 
+moveBlankUp :: Operator EightPuzzle
+moveBlankUp = moveBlank (\x -> x - 3) (> 2)
+
+
 moveBlankDown :: Operator EightPuzzle
 moveBlankDown = moveBlank (+ 3) (< 6)
 
 
-moveBlankUp :: Operator EightPuzzle
-moveBlankUp = moveBlank (\x -> x - 3) (> 2)
-
 instance Problem EightPuzzle where
-    isGoal    = (== fromList (8:[0..7]) ) . board
+    isGoal    = (== goalBoard ) . board
     operators =
         [ moveBlankUp
         , moveBlankDown
@@ -232,31 +244,56 @@ instance Problem EightPuzzle where
         ]
 
 
+goalBoard :: Vector Position
+goalBoard = V.fromList (8:[0..7])
+
+
+-- function to get a list of ints into the puzzle representation
+
+makePuzzle :: [Int] -> EightPuzzle
+makePuzzle tiles =
+    EightPuzzle 0 $
+        V.fromList $ map snd $ sortBy (comparing fst) $ zip tiles [0..8]
+
+-- sample puzzles for testing
 puzzle :: EightPuzzle
-puzzle = EightPuzzle 0 (fromList [4,2,3,1,6,7,8,5,0])
+puzzle = makePuzzle [8,3,1,2,0,7,4,5,6]
 
+puzzle2 :: EightPuzzle
+puzzle2 = makePuzzle [8,3,1,2,6,7,4,5,0]
 
-{-
+{- Finally, we can specialize the search algorithm that we defined earlier by
+   Plugging in the appropriate heuristics and depth functions
 -}
 
 
-misplacedTile :: EightPuzzle -> Cost
-misplacedTile ep = undefined
 
+
+misplacedTile :: EightPuzzle -> Cost
+misplacedTile puzzle =
+    let countMisplaced = V.length . V.filter (== False) . V.zipWith (==) goalBoard . board
+    in
+        if board puzzle ! 0 == 8
+            then countMisplaced puzzle -- when the blank is in place, count up the misplaced tiles
+            else countMisplaced puzzle - 1 -- when it isnt, count up and subtract the non-existant tile
+
+
+-- min 8 to discount cases
 
 manhattan :: EightPuzzle -> Cost
 manhattan ep = undefined
 
 
 astarMisplacedTile :: QueueingFunction EightPuzzle
-astarMisplacedTile = astar depth misplacedTile
+astarMisplacedTile = astar misplacedTile depth
 
 
 astarManhattan :: QueueingFunction EightPuzzle
-astarManhattan = astar depth manhattan
+astarManhattan = astar manhattan depth
 
 
-
+uniformCostEightPuzzle :: QueueingFunction EightPuzzle
+uniformCostEightPuzzle = uniformCost depth
 
 
 
