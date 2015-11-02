@@ -1,5 +1,6 @@
 module Main where
 
+import           Control.Monad        (unless)
 import           Data.List            (foldl', sortBy)
 import qualified Data.Matrix          as M (fromList)
 import           Data.Maybe           (catMaybes)
@@ -7,9 +8,9 @@ import           Data.Ord             (comparing)
 import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton,
                                        size)
 import           Data.Vector          (Vector, (!), (//))
-import qualified Data.Vector          as V (elemIndex, filter, findIndex,
-                                            fromList, indexed, length, map,
-                                            slice, toList, zipWith)
+import qualified Data.Vector          as V (concatMap, elemIndex, filter,
+                                            findIndex, fromList, indexed,
+                                            length, map, slice, toList, zipWith)
 import           System.IO            (hFlush, stdout)
 
 {-  We'll start by defining a few abstract building blocks for pieces of the general
@@ -111,7 +112,7 @@ generalSearch initialState =
                   else go (enqueue queue (expand node))
                           (nodeCount + length (expand node))
                           (max maxSize (size nodes))
-                          (trace ++ show node ++ "\n")
+                          (trace `seq` trace ++ show node ++ "\n") -- force the 'trace' accumulator
                           enqueue
 -- Using "Maybe a = Just a | Nothing" is the haskelly way of checking for null
 -- in this case, we minView to return either 'Just' the dequeued node and the new
@@ -332,6 +333,19 @@ uniformCostEightPuzzle :: QueueingFunction EightPuzzle
 uniformCostEightPuzzle = uniformCost depth
 
 
+-- I was all ready to dig into Haskell memory profiling when I realized that
+-- the puzzle I was testing on was unsolvable. Here's a simple check i found
+-- at http://ldc.usb.ve/~gpalma/ci2693sd08/puzzleFactible.txt
+isSolvable :: EightPuzzle -> Bool
+isSolvable (EightPuzzle _ board)=
+    let board' = V.slice 1 8 board
+    in
+        even
+        $ V.length
+        $ V.filter (== True)
+        $ V.concatMap (\(x,lst) -> V.map (x <) lst )
+        $ V.fromList [(board' ! i, V.slice 0 i board') | i <- [0..(V.length board' - 1)]]
+
 
 main :: IO ()
 main = do
@@ -360,6 +374,10 @@ arbitraryPuzzle = do
     putStr "Enter the thrid row:  "
     hFlush stdout
     third <- getLine
+    let puzzle = makePuzzle (map read $ concatMap words [first,second,third])
+    unless (isSolvable puzzle) $
+        do putStrLn "Puzzle isn't solveable, try again"
+           arbitraryPuzzle
     putStrLn "Enter 1 for Uniform Cost Search"
     putStrLn "Enter 2 for A* Misplaced Tile"
     putStrLn "Enter 3 for A* Manhattan Distance"
@@ -368,9 +386,8 @@ arbitraryPuzzle = do
                         "1" -> uniformCostEightPuzzle
                         "2" -> astarMisplacedTile
                         "3" -> astarManhattan
-                        _   -> seq 0 (error "You failed to select an algoritm, I gleefully crash your program")
-        puzzle = makePuzzle (map read $ concatMap words [first,second,third])
-    case generalSearch puzzle algorithm of
+                        _   -> error "You failed to select an algoritm, I gleefully crash your program"
+    case algorithm `seq` generalSearch puzzle algorithm of -- force evaluation of 'algorithm' in case of error
         Left err -> putStrLn err
         Right (state, numNodes, maxSize, trace) -> do
             putStrLn trace
