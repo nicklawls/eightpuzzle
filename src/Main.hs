@@ -5,7 +5,7 @@ import           System.Environment
 import           Data.List            (foldl', sortBy)
 import qualified Data.Matrix          as M (fromList)
 import           Data.Ord             (comparing)
-import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton)
+import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton,size)
 import           Data.Vector          (Vector, (!), (//))
 import qualified Data.Vector          as V (elemIndex, filter, findIndex,
                                             fromList, indexed, length, map,
@@ -84,25 +84,32 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
    order the insertion into the search queue.
 
    As in the psuedocode, we pass in an initial problem state and a queueing
-   function to order node insertion
-   We return an 'Either' a 'String' to denote that the operation might fail,
-   producing an error 'String', or the correct solution state
+   function to order node insertion. We return an 'Either' a 'String' to denote
+   that the operation might fail, producing an error 'String' or the correct
+   solution state and all the attendant statistics. There are more idiomatic
+   ways to maintain the trace, queue size and number of nodes expanded, but I
+   decided to stick to argument passing to avoid syntactic confusion.
 
-   Haskell code doesn't have an immediately obvious way to express while loops,
-   so we use the recursive 'go' function to implement iteration. The 'go'
+   Haskell doesn't have an immediately obvious way to express while loops,
+   so I use the recursive 'go' function to implement iteration. The 'go'
    function also uses the 'do' syntax sugar to look more imperative
 -}
 
-generalSearch :: Problem state => state -> QueueingFunction state -> Either String state
-generalSearch state =
-    go (singleton 0 state) -- start with initial cost 0, 'singleton' initializes queue
-        where go nodes qf = do
-                (node, queue) <- case minView nodes of
+-- Possibly replace trace string with IO embedding
+generalSearch :: (Show state, Problem state) => state -> QueueingFunction state -> Either String (state,Int,Int,String)
+generalSearch initialState =
+    go (singleton 0 initialState) 0 0 "Beginning Search \n" -- start with initial cost 0, 'singleton' initializes queue
+        where go nodes nodeCount maxSize trace enqueue = do
+                (node, queue) <- case minView nodes of -- haskelly way of checking if the queue is empty
                                     Nothing -> Left "No Solution"
-                                    Just (node,queue) -> Right (node,queue)
+                                    Just view -> Right view
                 if isGoal node
-                  then return node
-                  else go (qf queue (expand node) ) qf
+                  then return (node, nodeCount, maxSize, trace ++ show node)
+                  else go (enqueue queue (expand node))
+                          (nodeCount + length (expand node))
+                          (max maxSize (size queue))
+                          (trace ++ show node)
+                          enqueue
 
 
 
