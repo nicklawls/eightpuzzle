@@ -1,14 +1,15 @@
 module Main where
 
-import System.Environment
-import Data.Maybe (catMaybes)
-import Control.Monad
-import Data.List (sortBy, foldl')
-import Data.Ord (comparing)
-import Data.PQueue.Prio.Min (MinPQueue, singleton, minView, insert)
-import Data.Vector (Vector, (!), (//))
-import qualified Data.Vector as V (elemIndex, findIndex, toList, indexed, fromList, length, zipWith, filter)
-import qualified Data.Matrix as M (fromList)
+import           Data.Maybe           (catMaybes)
+import           System.Environment
+import           Data.List            (foldl', sortBy)
+import qualified Data.Matrix          as M (fromList)
+import           Data.Ord             (comparing)
+import           Data.PQueue.Prio.Min (MinPQueue, insert, minView, singleton)
+import           Data.Vector          (Vector, (!), (//))
+import qualified Data.Vector          as V (elemIndex, filter, findIndex,
+                                            fromList, indexed, length, map,
+                                            slice, toList, zipWith)
 
 {-  We'll start by defining a few abstract building blocks for pieces of the general
     search algorithm. Allowing us to generalize to any NPuzzle, or any other
@@ -16,13 +17,11 @@ import qualified Data.Matrix as M (fromList)
 
     We'll then define concrete datatypes for the eight puzzle problem
     and connect them to the abstract interface.
--}
 
-{-  In order to provide a generic interface for other search problem, we'll be
+    In order to provide a generic interface for other search problem, we'll be
     making use of Haskell's hefty type system. See the follwoing link if you get
     confused: http://joelburget.com/data-newtype-instance-class/
 -}
-
 
 {-  An Operator for type 'state' is simply a function from a 'state' to a list of 'states's
     i.e. from a current state to a child state. For simplicity, we trust that
@@ -31,6 +30,7 @@ import qualified Data.Matrix as M (fromList)
 
 
 type Cost = Int -- 'Cost' is now an alias for the primitive type 'Int'
+
 
 type Operator state = state -> Maybe state
 -- 'state' is a type variable that any type can inhabit
@@ -59,19 +59,19 @@ class Problem state where
 
 
 applyAll :: [a -> b] -> a -> [b]
-applyAll functions state =
+applyAll functions value =
     case functions of
         [] -> []
-        (firstFunction:rest) -> firstFunction state : applyAll rest state
+        (firstFunction:rest) -> firstFunction value : applyAll rest value
 -- apply each function in a list of functions to some value, returning a list of results
 -- 'state' here is a value-level function argument, not a type variable
 
 
-{-  The queueing function takes the current queue and the expanded states, and
-    inserts them into the queue in some order. The order of insertion determines
-    the nature of the search algorithm. For our class of problems, we'll use a
-    min priority queue that will dequeue its entries in order of increasing 'Cost'.
-
+{-  A queueing function takes the current queue and the expanded states, and
+    inserts them into the queue with some cost. The cost determines the dequeing
+    order, which determines the nature of the search algorithm. For our class of
+    problems, we'll use a min priority queue that will dequeue its entries in
+    order of increasing 'Cost'.
 -}
 
 type Queue state = MinPQueue Cost state
@@ -95,7 +95,7 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
 
 generalSearch :: Problem state => state -> QueueingFunction state -> Either String state
 generalSearch state =
-    go (singleton 0 state) -- start with initial cost 0, singleton initializes queue
+    go (singleton 0 state) -- start with initial cost 0, 'singleton' initializes queue
         where go nodes qf = do
                 (node, queue) <- case minView nodes of
                                     Nothing -> Left "No Solution"
@@ -108,7 +108,7 @@ generalSearch state =
 
 
 {- Since every one of our search procedures is a derivative of A*, we can define a
-   general version first, then pass the heuristic function as an argument.
+   general version first, then pass g and h functions as arguments.
 
    We can also implement Uniform Cost search here, since it uses h(n) = 0 no
    matter what the problem is.
@@ -130,7 +130,6 @@ insertAll = foldl' (flip (uncurry insert))
 -- this magical incantation inserts the list of (score, node) pairs into the queue
 
 
--- TODO Fix this when cost is tupled
 uniformCost :: Problem state => (state -> Cost) -> QueueingFunction state
 uniformCost = astar (const 0) -- 'const 0' is a function that always returns 0
 
@@ -163,8 +162,8 @@ data EightPuzzle = EightPuzzle
     } deriving (Eq)
 
 
--- allows us to keep the inverted representation while
--- pretty printing the actual board structure
+-- Using the matrix package allows us to keep the inverted representation while
+-- pretty printing something close to the actual board structure
 instance Show EightPuzzle where
     show puzzle =
         ( show
@@ -201,7 +200,7 @@ moveBlank calcNeighbor boundaryTest (EightPuzzle depth board) =
                     }
           else Nothing
 -- (!) is unsafe vector indexing
--- the (Just neighbor) pattern match will throw an exception if elemIndex returns
+-- the (Just neighbor) pattern match will throw an exception if 'elemIndex' returns
 -- 'Nothing'
 
 
@@ -215,7 +214,7 @@ swap vec index1 index2 =
 
 
 
-{-  With the general framework in place, we can specialize it for each direction
+{-  With the general function in place, we can specialize it for each direction
 -}
 
 moveBlankLeft :: Operator EightPuzzle
@@ -234,6 +233,14 @@ moveBlankDown :: Operator EightPuzzle
 moveBlankDown = moveBlank (+ 3) (< 6)
 
 
+{-  Here's the 'instance' declaration we talked about earlier, where we finally
+    specify how 'EightPuzzle' implements the 'Problem' interface.
+
+    Remember that 'expand' is already defined, so we have no need to define it
+    here.
+-}
+
+
 instance Problem EightPuzzle where
     isGoal    = (== goalBoard ) . board
     operators =
@@ -246,42 +253,58 @@ instance Problem EightPuzzle where
 
 goalBoard :: Vector Position
 goalBoard = V.fromList (8:[0..7])
+--        = board (makePuzzle [1,2,3,4,5,6,7,8,0])
 
 
 -- function to get a list of ints into the puzzle representation
-
 makePuzzle :: [Int] -> EightPuzzle
 makePuzzle tiles =
     EightPuzzle 0 $
         V.fromList $ map snd $ sortBy (comparing fst) $ zip tiles [0..8]
 
+
 -- sample puzzles for testing
 puzzle :: EightPuzzle
 puzzle = makePuzzle [8,3,1,2,0,7,4,5,6]
 
+
 puzzle2 :: EightPuzzle
 puzzle2 = makePuzzle [8,3,1,2,6,7,4,5,0]
 
+
+manhattan16 :: EightPuzzle
+manhattan16 = makePuzzle [8,4,3,5,1,7,6,2,0]
+
 {- Finally, we can specialize the search algorithm that we defined earlier by
-   Plugging in the appropriate heuristics and depth functions
+   plugging in the appropriate heuristics and depth functions
+
+   Pardon the rather terse Haskell being displayed here ... it might help to
+   read the function from right to left, and to think of each (.) as applying
+   the next function on its left to the result so far.
 -}
 
-
-
-
+-- extract the board from the puzzle, compare it against the goal, and count up the tiles (excluding the blank) that don't match
 misplacedTile :: EightPuzzle -> Cost
-misplacedTile puzzle =
-    let countMisplaced = V.length . V.filter (== False) . V.zipWith (==) goalBoard . board
-    in
-        if board puzzle ! 0 == 8
-            then countMisplaced puzzle -- when the blank is in place, count up the misplaced tiles
-            else countMisplaced puzzle - 1 -- when it isnt, count up and subtract the non-existant tile
+misplacedTile =
+    V.length . V.filter (== False) . V.slice 1 8 . V.zipWith (==) goalBoard . board
 
 
--- min 8 to discount cases
-
+-- implemented by referencing https://heuristicswiki.wikispaces.com/Manhattan+Distance
+-- apply toXy to the argument and the goal, calculate individual coordinate distances (excluding the blank), sum them up
 manhattan :: EightPuzzle -> Cost
-manhattan ep = undefined
+manhattan =
+    sum . V.slice 1 8 . V.zipWith coordDistance (V.map toXy goalBoard) . V.map toXy . board
+
+
+-- convert position into an (x,y) coordinate pair
+toXy :: Position -> (Int,Int)
+toXy pos = (pos `div` 3, pos `mod` 3)
+
+
+-- sum the differences along the x and y axes
+coordDistance :: (Int, Int) -> (Int,Int) -> Cost
+coordDistance (xs,ys) (xg,yg) =
+    abs (xs - xg) + abs (ys - yg)
 
 
 astarMisplacedTile :: QueueingFunction EightPuzzle
