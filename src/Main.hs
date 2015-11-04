@@ -21,7 +21,7 @@ import           System.IO            (hFlush, stdout)
     and connect them to the abstract interface.
 
     In order to provide a generic interface for other search problem, we'll be
-    making use of Haskell's hefty type system. See the follwoing link if you get
+    making use of Haskell's hefty type syStatetem. See the follwoing link if you get
     confused: http://joelburget.com/data-newtype-instance-class/
 -}
 
@@ -85,11 +85,13 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
    implementing the 'Problem' interface, plus a queueing function with which to
    order the insertion into the search queue.
 
-   As in the psuedocode, we pass in an initial problem state and a queueing
+   We add two unfortunate parameters, the g and h functions, which are necessary
+   at this stage to print the associated costs on each iteration.
+   Then, following the psuedocode, we pass in an initial problem state and a queueing
    function to order node insertion. We return an 'Either' a 'String' to denote
    that the operation might fail, producing an error 'String' or the correct
    solution state and all the attendant statistics. There are more idiomatic
-   ways to maintain the trace, queue size and number of nodes expanded, but I
+   wayState to maintain the trace, queue size and number of nodes expanded, but I
    decided to stick to argument passing to avoid syntactic confusion.
 
    Haskell doesn't have an immediately obvious way to express while loops,
@@ -99,10 +101,12 @@ type QueueingFunction state = Queue state -> [state] -> Queue state
 
 -- Possibly replace trace string with IO embedding
 generalSearch :: (Show state, Problem state) => state
+                                             -> (state -> Cost)
+                                             -> (state -> Cost)
                                              -> QueueingFunction state
                                              -> Either String (state, Int, Int, String)
-generalSearch initialState =
-    go (singleton 0 initialState) 0 1 "Beginning Search \n" -- start with initial cost 0, 'singleton' initializes queue
+generalSearch initialState g h =
+    go (singleton 0 initialState) 0 1 "Expanding State... \n" -- start with initial cost 0, 'singleton' initializes queue
         where go nodes nodeCount maxSize trace enqueue = do
                 (node, queue) <- case minView nodes of
                                     Nothing   -> Left "No Solution"
@@ -112,12 +116,24 @@ generalSearch initialState =
                   else go (enqueue queue (expand node))
                           (nodeCount + length (expand node))
                           (max maxSize (size nodes))
-                          (trace `seq` trace ++ show node ++ "\n") -- force the 'trace' accumulator
+                          (trace `seq` trace ++ prettyPrint node g h) -- force the 'trace' accumulator
                           enqueue
 -- Using "Maybe a = Just a | Nothing" is the haskelly way of checking for null
 -- in this case, we minView to return either 'Just' the dequeued node and the new
 -- queue, or 'Nothing', telling us that the queue was empty
 
+prettyPrint :: (Show state, Problem state) => state
+                                           -> (state -> Cost) -- the depth
+                                           -> (state -> Cost) -- the heuristic
+                                           -> String
+prettyPrint n g h =
+    "The best state to expand with g(n) = "
+ ++ show (g n)
+ ++ " and h(n) = "
+ ++ show (h n)
+ ++ " is...\n"
+ ++ show n
+ ++ "Expanding this node...\n\n"
 
 
 
@@ -179,16 +195,14 @@ data EightPuzzle = EightPuzzle
 -- Using the matrix package allows us to keep the inverted representation while
 -- pretty printing something close to the actual board structure
 instance Show EightPuzzle where
-    show puzzle =
-        ( show
-        . M.fromList 3 3
-        . map fst
-        . sortBy (comparing snd)
-        . V.toList
-        . V.indexed
-        . board
-        $ puzzle
-        ) ++ "Depth: " ++ show (depth puzzle)
+    show = show
+         . M.fromList 3 3
+         . map fst
+         . sortBy (comparing snd)
+         . V.toList
+         . V.indexed
+         . board
+
 
 
 {-  To implement the Operators for Eightpuzzle, we can begin by defining a
@@ -316,9 +330,9 @@ toXy pos = (pos `div` 3, pos `mod` 3)
 
 
 -- sum the differences along the x and y axes
-distance :: (Int, Int) -> (Int,Int) -> Cost
-distance (xs,ys) (xg,yg) =
-    abs (xs - xg) + abs (ys - yg)
+distance :: (Int,Int) -> (Int,Int) -> Cost
+distance (xState,yState) (xGoal,yGoal) =
+    abs (xState - xGoal) + abs (yState - yGoal)
 
 
 astarMisplacedTile :: QueueingFunction EightPuzzle
@@ -334,7 +348,7 @@ uniformCostEightPuzzle = uniformCost depth
 
 
 -- I was all ready to dig into Haskell memory profiling when I realized that
--- the puzzle I was testing on was unsolvable. Here's a simple check i found
+-- the puzzle I was testing on was unsolvable. Here's a simple check I found
 -- at http://ldc.usb.ve/~gpalma/ci2693sd08/puzzleFactible.txt
 isSolvable :: EightPuzzle -> Bool
 isSolvable (EightPuzzle _ board)=
@@ -355,13 +369,14 @@ main = do
   case choice of
       "1" -> benchmark
       "2" -> arbitraryPuzzle
-      _   -> putStrLn "Listen to Instructions! \n" >>= const main
+      _   -> do putStrLn "Listen to Instructions! \n"
+                main
 
 
 benchmark :: IO ()
 benchmark = undefined
 
-
+-- TODO, choose heuristic with algorithm
 arbitraryPuzzle :: IO ()
 arbitraryPuzzle = do
     putStrLn "Enter rows using ' ' as a separator, use '0' to represent the blank"
@@ -378,19 +393,27 @@ arbitraryPuzzle = do
     unless (isSolvable puzzle) $
         do putStrLn "Puzzle isn't solveable, try again"
            arbitraryPuzzle
+    algorithm <- chooseAlgo
+    case generalSearch puzzle depth manhattan algorithm of
+        Left err -> putStrLn err
+        Right (state, numNodes, maxSize, trace) -> do
+            putStrLn trace
+            putStrLn "\nGoal!!!\n"
+            putStrLn $ "To solve this problem the search algorithm expanded a total of " ++ show numNodes ++ " nodes"
+            putStrLn $ "The maximum number of nodes in the queue at any one time was " ++ show maxSize
+            putStrLn $ "The depth of the goal node was " ++ show (depth state)
+    return ()
+
+
+chooseAlgo :: IO (QueueingFunction EightPuzzle)
+chooseAlgo = do
     putStrLn "Enter 1 for Uniform Cost Search"
     putStrLn "Enter 2 for A* Misplaced Tile"
     putStrLn "Enter 3 for A* Manhattan Distance"
     choice <- getLine
-    let algorithm = case choice of
-                        "1" -> uniformCostEightPuzzle
-                        "2" -> astarMisplacedTile
-                        "3" -> astarManhattan
-                        _   -> error "You failed to select an algoritm, I gleefully crash your program"
-    case algorithm `seq` generalSearch puzzle algorithm of -- force evaluation of 'algorithm' in case of error
-        Left err -> putStrLn err
-        Right (state, numNodes, maxSize, trace) -> do
-            putStrLn trace
-            putStrLn $ "Solution found at depth " ++ show (depth state)
-            putStrLn $ "Nodes Expanded:      " ++ show numNodes
-            putStrLn $ "Maximum Queue Size:  " ++ show maxSize
+    case choice of
+        "1" -> return uniformCostEightPuzzle
+        "2" -> return astarMisplacedTile
+        "3" -> return astarManhattan
+        _   -> do putStrLn "1, 2, or 3, not that hard \n"
+                  chooseAlgo
